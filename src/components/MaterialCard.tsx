@@ -1,4 +1,4 @@
-import { Material } from '../lib/firebaseRoom'
+import { Material, getExpiryStatus, formatExpiryDate } from '../lib/firebaseRoom'
 
 interface MaterialCardProps {
   material: Material
@@ -44,6 +44,9 @@ export default function MaterialCard({
 
   const categoryColor = categoryColors[material.category as MaterialCategory]
   const categoryLabel = categoryLabels[material.category as MaterialCategory]
+  const expiryStatus = getExpiryStatus(material)
+  const isExpiringSoon = expiryStatus === 'expiring-soon'
+  const expiryDate = formatExpiryDate(material.expiresAt || Date.now())
 
   return (
     <div className="material-card">
@@ -89,6 +92,23 @@ export default function MaterialCard({
           </button>
         )}
       </div>
+
+      {isExpiringSoon && (
+        <div style={{
+          background: 'rgba(241, 165, 53, 0.12)',
+          border: '1px solid rgba(241, 165, 53, 0.3)',
+          borderRadius: '6px',
+          padding: '8px 10px',
+          marginTop: '8px',
+          fontSize: '0.75rem',
+          color: '#f1a535',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          ⏰ Expires {expiryDate}
+        </div>
+      )}
     </div>
   )
 }

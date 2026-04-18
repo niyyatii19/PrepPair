@@ -16,6 +16,7 @@ import {
   listenToRoomMaterials,
   deleteMaterial,
   toggleMaterialHelpful,
+  cleanupExpiredMaterials,
   Material,
 } from '../lib/firebaseRoom'
 import MaterialsTab from '../components/MaterialsTab'
@@ -97,9 +98,20 @@ export default function MainScreen({ userData, onLogout }: MainScreenProps) {
     })
 
     // Listen to materials
-    const unsubscribeMaterials = listenToRoomMaterials(roomCode, (materialsData) => {
+    const unsubscribeMaterials = listenToRoomMaterials(roomCode, async (materialsData) => {
       console.log(`Materials updated: ${materialsData.length} total`)
       setMaterials(materialsData)
+      
+      // Cleanup expired materials & show warnings
+      const { deleted, expiring } = await cleanupExpiredMaterials(roomCode)
+      if (deleted > 0) {
+        showToastMessage(`${deleted} expired material(s) deleted`)
+      }
+      if (expiring.length > 0) {
+        const expiringTitles = expiring.map(m => m.title).slice(0, 2).join(', ')
+        const suffix = expiring.length > 2 ? ` +${expiring.length - 2} more` : ''
+        showToastMessage(`⏰ Material(s) expiring soon: ${expiringTitles}${suffix}`)
+      }
     })
 
     return () => {

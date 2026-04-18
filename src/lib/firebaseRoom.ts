@@ -26,6 +26,7 @@ import { ref, set, onValue, remove, update, push } from 'firebase/database'
  *       │   ├── category
  *       │   ├── sharedBy
  *       │   ├── sharedAt
+ *       │   ├── expiresAt
  *       │   └── markedHelpfulBy (array)
  */
 
@@ -41,6 +42,7 @@ export interface Material {
   category: MaterialCategory
   sharedBy: string
   sharedAt: number
+  expiresAt: number
   markedHelpfulBy: string[]
 }
 
@@ -217,13 +219,16 @@ export const getAllGoalsForUser = (goals: any[], userId: string) => {
 }
 
 // ─── Materials ───
-export const addMaterialToRoom = async (roomCode: string, userId: string, material: Omit<Material, 'id' | 'sharedAt' | 'markedHelpfulBy'>) => {
+export const addMaterialToRoom = async (roomCode: string, userId: string, material: Omit<Material, 'id' | 'sharedAt' | 'expiresAt' | 'markedHelpfulBy'>) => {
   const materialsRef = ref(database, `rooms/${roomCode}/materials`)
   const newMaterialRef = push(materialsRef)
+  const expiresAt = Date.now() + (15 * 24 * 60 * 60 * 1000) // 15 days from now
+  
   return set(newMaterialRef, {
     ...material,
     sharedBy: userId,
     sharedAt: Date.now(),
+    expiresAt,
     markedHelpfulBy: [],
   })
 }
@@ -293,6 +298,55 @@ export const searchMaterials = (materials: Material[], query: string): Material[
 
 export const getMaterialsByCategory = (materials: Material[], category: MaterialCategory): Material[] => {
   return materials.filter((m) => m.category === category)
+}
+
+export const cleanupExpiredMaterials = async (roomCode: string): Promise<{ deleted: number; expiring: Material[] }> => {
+  const now = Date.now()
+  const materials = await new Promise<Material[]>((resolve) => {
+    onValue(
+      ref(database, `rooms/${roomCode}/materials`),
+      (snapshot) => {
+        const data = snapshot.val() || {}
+        const materialsArray = Object.entries(data).map(([id, material]: [string, any]) => ({
+          id,
+          ...material,
+        })) as Material[]
+        resolve(materialsArray)
+      },
+      { onlyOnce: true }
+    )
+  })
+
+  let deleted = 0
+  const expiring: Material[] = []
+
+  for (const material of materials) {
+    // Delete if expired
+    if (material.expiresAt && material.expiresAt < now) {
+      await deleteMaterial(roomCode, material.id)
+      deleted++
+    }
+    // Warn if expiring within 24 hours
+    else if (material.expiresAt && material.expiresAt - now < 24 * 60 * 60 * 1000) {
+      expiring.push(material)
+    }
+  }
+
+  return { deleted, expiring }
+}
+
+export const getExpiryStatus = (material: Material): 'expired' | 'expiring-soon' | 'active' => {
+  const now = Date.now()
+  const timeUntilExpiry = (material.expiresAt || 0) - now
+  
+  if (timeUntilExpiry < 0) return 'expired'
+  if (timeUntilExpiry < 24 * 60 * 60 * 1000) return 'expiring-soon'
+  return 'active'
+}
+
+export const formatExpiryDate = (expiresAt: number): string => {
+  const date = new Date(expiresAt)
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 // ─── Cleanup ───
