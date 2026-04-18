@@ -12,7 +12,14 @@ import {
   getTotalCompletedGoals,
   getLeaderStatus,
   removeUserFromRoom,
+  addMaterialToRoom,
+  listenToRoomMaterials,
+  deleteMaterial,
+  toggleMaterialHelpful,
+  Material,
 } from '../lib/firebaseRoom'
+import MaterialsTab from '../components/MaterialsTab'
+import MaterialForm from '../components/MaterialForm'
 
 interface MainScreenProps {
   userData: any
@@ -39,6 +46,9 @@ export default function MainScreen({ userData, onLogout }: MainScreenProps) {
   const [toastText, setToastText] = useState('')
   const [allUsers, setAllUsers] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [materialsLoading, setMaterialsLoading] = useState(false)
+  const [showMaterialForm, setShowMaterialForm] = useState(false)
 
   const categories = ['dsa', 'system', 'mock', 'revision', 'other']
   const categoryLabels = {
@@ -86,13 +96,21 @@ export default function MainScreen({ userData, onLogout }: MainScreenProps) {
       setLoading(false)
     })
 
+    // Listen to materials
+    const unsubscribeMaterials = listenToRoomMaterials(roomCode, (materialsData) => {
+      console.log(`Materials updated: ${materialsData.length} total`)
+      setMaterials(materialsData)
+    })
+
     return () => {
       console.log(`Cleaning up listeners for user ${userId}`)
       unsubscribeUsers()
       unsubscribeGoals()
+      unsubscribeMaterials()
       // Reset state on unmount
       setGoals([])
       setAllUsers({})
+      setMaterials([])
       setLoading(true)
     }
   }, [roomCode, userId])
@@ -155,6 +173,38 @@ export default function MainScreen({ userData, onLogout }: MainScreenProps) {
   const handleCopyRoom = () => {
     navigator.clipboard.writeText(roomCode)
     showToastMessage('Room code copied!')
+  }
+
+  const handleAddMaterial = async (material: any) => {
+    try {
+      setMaterialsLoading(true)
+      await addMaterialToRoom(roomCode, userId, material)
+      showToastMessage('Material shared!')
+      setShowMaterialForm(false)
+    } catch (error) {
+      console.error('Error adding material:', error)
+      showToastMessage('Failed to share material')
+    } finally {
+      setMaterialsLoading(false)
+    }
+  }
+
+  const handleDeleteMaterial = async (materialId: string) => {
+    try {
+      await deleteMaterial(roomCode, materialId)
+      showToastMessage('Material deleted')
+    } catch (error) {
+      console.error('Error deleting material:', error)
+      showToastMessage('Failed to delete material')
+    }
+  }
+
+  const handleToggleMaterialHelpful = async (materialId: string) => {
+    try {
+      await toggleMaterialHelpful(roomCode, materialId, userId)
+    } catch (error) {
+      console.error('Error toggling helpful:', error)
+    }
   }
 
   const getGoalCategoryClass = (category: string) => {
@@ -234,6 +284,9 @@ export default function MainScreen({ userData, onLogout }: MainScreenProps) {
         </div>
         <div className={`tab ${activeTab === 'stats' ? 'active' : ''}`} onClick={() => setActiveTab('stats')}>
           Stats
+        </div>
+        <div className={`tab ${activeTab === 'materials' ? 'active' : ''}`} onClick={() => setActiveTab('materials')}>
+          Materials
         </div>
         <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
           Settings
@@ -527,6 +580,56 @@ export default function MainScreen({ userData, onLogout }: MainScreenProps) {
           <button className="btn-logout" onClick={onLogout}>
             Logout & Switch Room
           </button>
+        </div>
+
+        {/* Materials Tab */}
+        <div className={`tab-panel ${activeTab === 'materials' ? 'active' : ''}`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Share Material Form */}
+            {showMaterialForm ? (
+              <div style={{
+                backgroundColor: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: '1.5rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-color)' }}>Share Study Material</h3>
+                  <button
+                    onClick={() => setShowMaterialForm(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '1.5rem',
+                      cursor: 'pointer',
+                      color: 'var(--muted)'
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <MaterialForm onSubmit={handleAddMaterial} isLoading={materialsLoading} />
+              </div>
+            ) : (
+              <button
+                className="btn-primary"
+                onClick={() => setShowMaterialForm(true)}
+                style={{ width: '100%' }}
+              >
+                ➕ Share Material
+              </button>
+            )}
+
+            {/* Materials List */}
+            <MaterialsTab
+              materials={materials}
+              currentUserId={userId}
+              friendName={friendData?.name || 'Friend'}
+              onDelete={handleDeleteMaterial}
+              onToggleHelpful={handleToggleMaterialHelpful}
+              showForm={showMaterialForm}
+            />
+          </div>
         </div>
       </div>
 

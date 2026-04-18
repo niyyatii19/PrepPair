@@ -10,15 +10,39 @@ import { ref, set, onValue, remove, update, push } from 'firebase/database'
  *   │   │   ├── role (you/friend)
  *   │   │   └── updatedAt
  *   │   └── {userId2}/...
- *   └── goals/
- *       ├── {goalId}/
- *       │   ├── userId
- *       │   ├── text
+ *   ├── goals/
+ *   │   ├── {goalId}/
+ *   │   │   ├── userId
+ *   │   │   ├── text
+ *   │   │   ├── category
+ *   │   │   ├── done
+ *   │   │   ├── createdAt
+ *   │   │   └── completedAt
+ *   └── materials/
+ *       ├── {materialId}/
+ *       │   ├── type (link|text)
+ *       │   ├── title
+ *       │   ├── content
  *       │   ├── category
- *       │   ├── done
- *       │   ├── createdAt
- *       │   └── completedAt
+ *       │   ├── sharedBy
+ *       │   ├── sharedAt
+ *       │   └── markedHelpfulBy (array)
  */
+
+// ─── Types ───
+export type MaterialCategory = 'dsa' | 'system' | 'mock' | 'revision' | 'other'
+export type MaterialType = 'link' | 'text'
+
+export interface Material {
+  id: string
+  type: MaterialType
+  title: string
+  content: string
+  category: MaterialCategory
+  sharedBy: string
+  sharedAt: number
+  markedHelpfulBy: string[]
+}
 
 // ─── Users ───
 export const registerUserInRoom = async (roomCode: string, userId: string, userData: any) => {
@@ -190,6 +214,85 @@ export const getTodayGoalsForUser = (goals: any[], userId: string) => {
 export const getAllGoalsForUser = (goals: any[], userId: string) => {
   if (!userId) return []
   return goals.filter((g: any) => g.userId === userId)
+}
+
+// ─── Materials ───
+export const addMaterialToRoom = async (roomCode: string, userId: string, material: Omit<Material, 'id' | 'sharedAt' | 'markedHelpfulBy'>) => {
+  const materialsRef = ref(database, `rooms/${roomCode}/materials`)
+  const newMaterialRef = push(materialsRef)
+  return set(newMaterialRef, {
+    ...material,
+    sharedBy: userId,
+    sharedAt: Date.now(),
+    markedHelpfulBy: [],
+  })
+}
+
+export const listenToRoomMaterials = (roomCode: string, callback: (materials: Material[]) => void) => {
+  const materialsRef = ref(database, `rooms/${roomCode}/materials`)
+  const unsubscribe = onValue(
+    materialsRef,
+    (snapshot) => {
+      try {
+        const data = snapshot.val() || {}
+        const materialsArray = Object.entries(data).map(([id, material]: [string, any]) => ({
+          id,
+          ...material,
+        })) as Material[]
+        callback(materialsArray)
+      } catch (error) {
+        console.error('Error processing materials:', error)
+        callback([])
+      }
+    },
+    (error) => {
+      console.error('Error listening to materials:', error)
+      callback([])
+    }
+  )
+  return unsubscribe
+}
+
+export const deleteMaterial = async (roomCode: string, materialId: string) => {
+  const materialRef = ref(database, `rooms/${roomCode}/materials/${materialId}`)
+  return remove(materialRef)
+}
+
+export const toggleMaterialHelpful = async (roomCode: string, materialId: string, userId: string) => {
+  const materialRef = ref(database, `rooms/${roomCode}/materials/${materialId}`)
+  
+  // Get current state
+  const snapshot = await new Promise<any>((resolve) => {
+    onValue(materialRef, (snap) => {
+      resolve(snap.val())
+    }, { onlyOnce: true })
+  })
+
+  if (!snapshot) return
+
+  const markedHelpfulBy = snapshot.markedHelpfulBy || []
+  const isMarkedByUser = markedHelpfulBy.includes(userId)
+  const updatedMarkedHelpfulBy = isMarkedByUser
+    ? markedHelpfulBy.filter((id: string) => id !== userId)
+    : [...markedHelpfulBy, userId]
+
+  return update(materialRef, {
+    markedHelpfulBy: updatedMarkedHelpfulBy,
+  })
+}
+
+export const searchMaterials = (materials: Material[], query: string): Material[] => {
+  if (!query.trim()) return materials
+  const lowerQuery = query.toLowerCase()
+  return materials.filter(
+    (m) =>
+      m.title.toLowerCase().includes(lowerQuery) ||
+      m.content.toLowerCase().includes(lowerQuery)
+  )
+}
+
+export const getMaterialsByCategory = (materials: Material[], category: MaterialCategory): Material[] => {
+  return materials.filter((m) => m.category === category)
 }
 
 // ─── Cleanup ───

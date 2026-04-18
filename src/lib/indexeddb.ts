@@ -10,8 +10,23 @@ export interface Goal {
   completedAt?: number
 }
 
+export type MaterialCategory = 'dsa' | 'system' | 'mock' | 'revision' | 'other'
+export type MaterialType = 'link' | 'text'
+
+export interface Material {
+  id: string
+  type: MaterialType
+  title: string
+  content: string
+  category: MaterialCategory
+  sharedBy: string
+  sharedAt: number
+  markedHelpfulBy: string[]
+}
+
 interface DBSchema {
   goals: Goal
+  materials: Material
   synced: { key: string; timestamp: number }
 }
 
@@ -27,6 +42,9 @@ export const initDB = (): Promise<IDBDatabase> => {
 
       if (!database.objectStoreNames.contains('goals')) {
         database.createObjectStore('goals', { keyPath: 'id' })
+      }
+      if (!database.objectStoreNames.contains('materials')) {
+        database.createObjectStore('materials', { keyPath: 'id' })
       }
       if (!database.objectStoreNames.contains('synced')) {
         database.createObjectStore('synced', { keyPath: 'key' })
@@ -82,6 +100,40 @@ export const deleteGoal = async (goalId: string): Promise<void> => {
   const store = tx.objectStore('goals')
   return new Promise((resolve, reject) => {
     const request = store.delete(goalId)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve()
+  })
+}
+
+// Materials operations
+export const saveMaterial = async (material: Material): Promise<void> => {
+  const database = await getDB()
+  const tx = database.transaction('materials', 'readwrite')
+  const store = tx.objectStore('materials')
+  return new Promise((resolve, reject) => {
+    const request = store.put(material)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve()
+  })
+}
+
+export const getMaterials = async (): Promise<Material[]> => {
+  const database = await getDB()
+  const tx = database.transaction('materials', 'readonly')
+  const store = tx.objectStore('materials')
+  return new Promise((resolve, reject) => {
+    const request = store.getAll()
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
+export const deleteMaterialLocal = async (materialId: string): Promise<void> => {
+  const database = await getDB()
+  const tx = database.transaction('materials', 'readwrite')
+  const store = tx.objectStore('materials')
+  return new Promise((resolve, reject) => {
+    const request = store.delete(materialId)
     request.onerror = () => reject(request.error)
     request.onsuccess = () => resolve()
   })
